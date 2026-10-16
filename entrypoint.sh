@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 
 # ---- runtime knobs (env-overridable) ----
-NODE_ID="${ARGOPORT_ID:-$(cat /proc/sys/kernel/random/uuid)}"
+# NODE_ID is resolved later by resolve_identity() — see the cascade there.
 WS_ROOT="${ARGOPORT_PATH:-argo}"       # no leading slash
 BIND="${ARGOPORT_BIND:-0.0.0.0}"
 LOG_LEVEL="${ARGOPORT_LOG:-warning}"
@@ -24,6 +24,49 @@ SINK_FALLBACK=$((SINK_BASE + 5))
 say()  { printf '[argoport] %s\n' "$*"; }
 warn() { printf '[argoport] WARN: %s\n' "$*" >&2; }
 die()  { printf '[argoport] FATAL: %s\n' "$*" >&2; exit 1; }
+
+# Deterministic UUIDv5-style from a seed. Stable across restarts, unique per seed.
+# Lets Railway users get a persistent identity with zero configuration.
+derive_uuid() {
+  local h a b c d e vb
+  h=$(printf '%s' "argoport:$1" | sha1sum | cut -c1-32)
+  a=${h:0:8}; b=${h:8:4}; c=${h:12:4}; d=${h:16:4}; e=${h:20:12}
+  c="5${c:1:3}"                                   # version 5
+  vb=$(( (16#${d:0:1} & 0x3) | 0x8 ))             # variant 10xx
+  d=$(printf '%x' "$vb")${d:1:3}
+  printf '%s-%s-%s-%s-%s\n' "$a" "$b" "$c" "$d" "$e"
+}
+
+# Pick the node identity. Explicit wins, then a saved one, then a deterministic
+# derive from Railway's stable service id, and only then a fresh random.
+resolve_identity() {
+  local state="${RUN_DIR}/.argoport-id"
+  local seed=""
+
+  if [[ -n "${ARGOPORT_ID:-}" ]]; then
+    NODE_ID="$ARGOPORT_ID"
+    printf '%s' "$NODE_ID" > "$state"
+    say "identity: explicit ARGOPORT_ID"
+    return
+  fi
+
+  if [[ -s "$state" ]]; then
+    NODE_ID=$(<"$state")
+    say "identity: restored from state file"
+    return
+  fi
+
+  if [[ -n "${RAILWAY_SERVICE_ID:-}" ]]; then
+    seed="$RAILWAY_SERVICE_ID"
+    say "identity: derived from RAILWAY_SERVICE_ID"
+  else
+    seed=$(cat /proc/sys/kernel/random/uuid)
+    say "identity: fresh random (no Railway service id)"
+  fi
+
+  NODE_ID=$(derive_uuid "$seed")
+  printf '%s' "$NODE_ID" > "$state"
+}
 
 cd "$RUN_DIR"
 
@@ -176,7 +219,7 @@ LINKS
 
 # ---- main ----
 main() {
-  say "identity ${NODE_ID}"
+  resolve_identity
   say "listen   ${BIND}:${HOST_PORT}"
   command -v xray >/dev/null || die "xray not on PATH"
   command -v cloudflared >/dev/null || die "cloudflared not on PATH"
