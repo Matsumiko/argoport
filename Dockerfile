@@ -29,6 +29,10 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --no-create-home argoport
 
+# /run is root:root 0755 on debian, and we run as a non-root user.
+# Give the app its own writable dir, and make it the default run dir.
+RUN mkdir -p /data && chown argoport:argoport /data
+
 COPY --from=grab /grab/xray /grab/geoip.dat /grab/geosite.dat /grab/cloudflared /usr/local/bin/
 COPY entrypoint.sh /usr/local/bin/argoport-entry
 RUN chmod +x /usr/local/bin/argoport-entry /usr/local/bin/xray /usr/local/bin/cloudflared
@@ -37,9 +41,10 @@ RUN chmod +x /usr/local/bin/argoport-entry /usr/local/bin/xray /usr/local/bin/cl
 ENV PORT=8080 \
     ARGOPORT_BIND=0.0.0.0 \
     ARGOPORT_PATH=argo \
-    ARGOPORT_LOG=warning
+    ARGOPORT_LOG=warning \
+    ARGOPORT_RUN_DIR=/data
 
-WORKDIR /run
+WORKDIR /data
 USER argoport
 EXPOSE 8080
 

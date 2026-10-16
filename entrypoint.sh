@@ -45,7 +45,7 @@ resolve_identity() {
 
   if [[ -n "${ARGOPORT_ID:-}" ]]; then
     NODE_ID="$ARGOPORT_ID"
-    printf '%s' "$NODE_ID" > "$state"
+    save_identity "$state"
     say "identity: explicit ARGOPORT_ID"
     return
   fi
@@ -65,10 +65,27 @@ resolve_identity() {
   fi
 
   NODE_ID=$(derive_uuid "$seed")
-  printf '%s' "$NODE_ID" > "$state"
+  save_identity "$state"
 }
 
-cd "$RUN_DIR"
+# Persisting is best-effort. The node works fine without it — worst case the
+# id is re-derived from RAILWAY_SERVICE_ID on next boot. Never fatal.
+save_identity() {
+  if ! printf '%s' "$NODE_ID" > "$1" 2>/dev/null; then
+    warn "cannot persist identity to $1 — continuing without it"
+  fi
+}
+
+# Fail with a readable message rather than a bare "No such file or directory"
+# from deep inside set -e. Verify writability up front — a dir we can cd into
+# but not write to would otherwise blow up later, mid-script.
+if ! mkdir -p "$RUN_DIR" 2>/dev/null || ! cd "$RUN_DIR" 2>/dev/null; then
+  die "RUN_DIR '$RUN_DIR' is not a usable directory (running as uid $(id -u))"
+fi
+if ! : > .write-probe 2>/dev/null; then
+  die "RUN_DIR '$RUN_DIR' is not writable by uid $(id -u) — check volume/dir ownership"
+fi
+rm -f .write-probe
 
 # ---- config ----
 # One public inbound on $HOST_PORT. Path-based fallbacks fan out to
