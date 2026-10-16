@@ -9,6 +9,10 @@ WS_ROOT="${ARGOPORT_PATH:-argo}"       # no leading slash
 TAG="${ARGOPORT_TAG:-}"                # optional suffix on emitted node names
 TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"     # optional: DM the links on startup
 TG_CHAT="${TELEGRAM_CHAT_ID:-}"
+# Appended after the protocol name in every WebSocket path, e.g. /argo-vless-matsumiko.
+# Defined once and used in BOTH the Xray config and the emitted links — if these
+# two ever diverge the client dials a path nothing is listening on.
+WS_TAG="${TAG:+-${TAG}}"
 BIND="${ARGOPORT_BIND:-0.0.0.0}"
 LOG_LEVEL="${ARGOPORT_LOG:-warning}"
 RUN_DIR="${ARGOPORT_RUN_DIR:-/run}"
@@ -107,10 +111,10 @@ render_config() {
         "decryption": "none",
         "fallbacks": [
           { "dest": ${SINK_FALLBACK} },
-          { "path": "/${WS_ROOT}-vless", "dest": ${SINK_VLESS} },
-          { "path": "/${WS_ROOT}-vmess", "dest": ${SINK_VMESS} },
-          { "path": "/${WS_ROOT}-trojan", "dest": ${SINK_TROJAN} },
-          { "path": "/${WS_ROOT}-shadowsocks", "dest": ${SINK_SS} }
+          { "path": "/${WS_ROOT}-vless${WS_TAG}", "dest": ${SINK_VLESS} },
+          { "path": "/${WS_ROOT}-vmess${WS_TAG}", "dest": ${SINK_VMESS} },
+          { "path": "/${WS_ROOT}-trojan${WS_TAG}", "dest": ${SINK_TROJAN} },
+          { "path": "/${WS_ROOT}-shadowsocks${WS_TAG}", "dest": ${SINK_SS} }
         ]
       },
       "streamSettings": { "network": "tcp" },
@@ -124,25 +128,25 @@ render_config() {
     {
       "listen": "127.0.0.1", "port": ${SINK_VLESS}, "protocol": "vless",
       "settings": { "clients": [ { "id": "${NODE_ID}" } ], "decryption": "none" },
-      "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/${WS_ROOT}-vless" } },
+      "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/${WS_ROOT}-vless${WS_TAG}" } },
       "sniffing": { "enabled": true, "destOverride": [ "http", "tls", "quic" ], "metadataOnly": false }
     },
     {
       "listen": "127.0.0.1", "port": ${SINK_VMESS}, "protocol": "vmess",
       "settings": { "clients": [ { "id": "${NODE_ID}", "alterId": 0 } ] },
-      "streamSettings": { "network": "ws", "wsSettings": { "path": "/${WS_ROOT}-vmess" } },
+      "streamSettings": { "network": "ws", "wsSettings": { "path": "/${WS_ROOT}-vmess${WS_TAG}" } },
       "sniffing": { "enabled": true, "destOverride": [ "http", "tls", "quic" ], "metadataOnly": false }
     },
     {
       "listen": "127.0.0.1", "port": ${SINK_TROJAN}, "protocol": "trojan",
       "settings": { "clients": [ { "password": "${NODE_ID}" } ] },
-      "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/${WS_ROOT}-trojan" } },
+      "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/${WS_ROOT}-trojan${WS_TAG}" } },
       "sniffing": { "enabled": true, "destOverride": [ "http", "tls", "quic" ], "metadataOnly": false }
     },
     {
       "listen": "127.0.0.1", "port": ${SINK_SS}, "protocol": "shadowsocks",
       "settings": { "method": "chacha20-ietf-poly1305", "password": "${NODE_ID}", "network": "tcp,udp" },
-      "streamSettings": { "network": "ws", "wsSettings": { "path": "/${WS_ROOT}-shadowsocks" } },
+      "streamSettings": { "network": "ws", "wsSettings": { "path": "/${WS_ROOT}-shadowsocks${WS_TAG}" } },
       "sniffing": { "enabled": true, "destOverride": [ "http", "tls", "quic" ], "metadataOnly": false }
     }
   ],
@@ -194,24 +198,24 @@ start_tunnel() {
 emit_links() {
   local camo="www.digitalocean.com"
   local ss_cred ss_b64 ss_plugin vmess_json vmess_b64
-  # Node display names. ARGOPORT_TAG appends -[tag] so several deployments
+  # Node display names. ARGOPORT_TAG appends [tag] so several deployments
   # can share one client without their entries being indistinguishable.
   local vless_name="argoport-vless" vmess_name="argoport-vmess"
   local trojan_name="argoport-trojan" ss_name="argoport-ss"
   if [[ -n "$TAG" ]]; then
-    vless_name="${vless_name}-[${TAG}]"
-    vmess_name="${vmess_name}-[${TAG}]"
-    trojan_name="${trojan_name}-[${TAG}]"
-    ss_name="${ss_name}-[${TAG}]"
+    vless_name="${vless_name}[${TAG}]"
+    vmess_name="${vmess_name}[${TAG}]"
+    trojan_name="${trojan_name}[${TAG}]"
+    ss_name="${ss_name}[${TAG}]"
   fi
 
   ss_cred="chacha20-ietf-poly1305:${NODE_ID}"
   ss_b64=$(printf '%s' "$ss_cred" | base64 -w0)
   # SIP002: the plugin option string must be percent-encoded as a single value.
-  ss_plugin=$(printf '%s' "v2ray-plugin;tls;mux=0;mode=websocket;host=${ARGO};path=/${WS_ROOT}-shadowsocks" | jq -sRr @uri)
+  ss_plugin=$(printf '%s' "v2ray-plugin;tls;mux=0;mode=websocket;host=${ARGO};path=/${WS_ROOT}-shadowsocks${WS_TAG}" | jq -sRr @uri)
 
   vmess_json=$(jq -nc \
-    --arg id "$NODE_ID" --arg host "$camo" --arg argo "$ARGO" --arg path "/${WS_ROOT}-vmess" --arg ps "$vmess_name" \
+    --arg id "$NODE_ID" --arg host "$camo" --arg argo "$ARGO" --arg path "/${WS_ROOT}-vmess${WS_TAG}" --arg ps "$vmess_name" \
     '{v:"2",ps:$ps,add:$host,port:"443",id:$id,aid:"0",scy:"auto",net:"ws",type:"none",
       host:$argo,path:$path,tls:"tls",sni:$argo,alpn:""}')
   vmess_b64=$(printf '%s' "$vmess_json" | base64 -w0)
@@ -222,19 +226,19 @@ emit_links() {
 ================ argoport · node links ================
 identity : ${NODE_ID}
 tunnel   : ${ARGO}
-path root: /${WS_ROOT}-<protocol>
+path root: /${WS_ROOT}-<protocol>${WS_TAG}
 
 --- VLESS (recommended) ---
-vless://${NODE_ID}@${camo}:443?encryption=none&security=tls&sni=${ARGO}&type=ws&host=${ARGO}&path=%2F${WS_ROOT}-vless#${vless_name}
+vless://${NODE_ID}@${camo}:443?encryption=none&security=tls&sni=${ARGO}&type=ws&host=${ARGO}&path=%2F${WS_ROOT}-vless${WS_TAG}#${vless_name}
 
 --- TROJAN ---
-trojan://${NODE_ID}@${camo}:443?security=tls&sni=${ARGO}&type=ws&host=${ARGO}&path=%2F${WS_ROOT}-trojan#${trojan_name}
+trojan://${NODE_ID}@${camo}:443?security=tls&sni=${ARGO}&type=ws&host=${ARGO}&path=%2F${WS_ROOT}-trojan${WS_TAG}#${trojan_name}
 
 --- VMESS ---
 vmess://${vmess_b64}
 
 --- SHADOWSOCKS (SIP002) ---
-ss://${ss_b64}@${camo}:443?plugin=${ss_plugin}&security=tls&sni=${ARGO}&type=ws&host=${ARGO}&path=%2F${WS_ROOT}-shadowsocks#${ss_name}
+ss://${ss_b64}@${camo}:443?plugin=${ss_plugin}&security=tls&sni=${ARGO}&type=ws&host=${ARGO}&path=%2F${WS_ROOT}-shadowsocks${WS_TAG}#${ss_name}
 
   kalau client kamu tidak menerima link di atas, isi manual:
   Server:      ${camo}
@@ -242,13 +246,13 @@ ss://${ss_b64}@${camo}:443?plugin=${ss_plugin}&security=tls&sni=${ARGO}&type=ws&
   Password:    ${NODE_ID}
   Method:      chacha20-ietf-poly1305
   Plugin:      v2ray-plugin
-  Plugin Opts: mode=websocket;tls=1;host=${ARGO};path=/${WS_ROOT}-shadowsocks
+  Plugin Opts: mode=websocket;tls=1;host=${ARGO};path=/${WS_ROOT}-shadowsocks${WS_TAG}
   SNI:         ${ARGO}
 
 --- CLASH META ---
-- { name: ${vless_name}, type: vless, server: ${camo}, port: 443, uuid: ${NODE_ID}, tls: true, servername: ${ARGO}, skip-cert-verify: false, network: ws, ws-opts: { path: /${WS_ROOT}-vless, headers: { Host: ${ARGO} } }, udp: true }
-- { name: ${trojan_name}, type: trojan, server: ${camo}, port: 443, password: ${NODE_ID}, tls: true, sni: ${ARGO}, skip-cert-verify: false, network: ws, ws-opts: { path: /${WS_ROOT}-trojan, headers: { Host: ${ARGO} } }, udp: true }
-- { name: ${ss_name}, type: ss, server: ${camo}, port: 443, cipher: chacha20-ietf-poly1305, password: ${NODE_ID}, plugin: v2ray-plugin, plugin-opts: { mode: websocket, host: ${ARGO}, path: /${WS_ROOT}-shadowsocks, tls: true, skip-cert-verify: false, mux: false } }
+- { name: ${vless_name}, type: vless, server: ${camo}, port: 443, uuid: ${NODE_ID}, tls: true, servername: ${ARGO}, skip-cert-verify: false, network: ws, ws-opts: { path: /${WS_ROOT}-vless${WS_TAG}, headers: { Host: ${ARGO} } }, udp: true }
+- { name: ${trojan_name}, type: trojan, server: ${camo}, port: 443, password: ${NODE_ID}, tls: true, sni: ${ARGO}, skip-cert-verify: false, network: ws, ws-opts: { path: /${WS_ROOT}-trojan${WS_TAG}, headers: { Host: ${ARGO} } }, udp: true }
+- { name: ${ss_name}, type: ss, server: ${camo}, port: 443, cipher: chacha20-ietf-poly1305, password: ${NODE_ID}, plugin: v2ray-plugin, plugin-opts: { mode: websocket, host: ${ARGO}, path: /${WS_ROOT}-shadowsocks${WS_TAG}, tls: true, skip-cert-verify: false, mux: false } }
 ======================================================
 
 LINKS
