@@ -43,7 +43,9 @@ WORKDIR /run
 USER argoport
 EXPOSE 8080
 
+# TCP reachability check, not HTTP — Xray speaks VLESS, not HTTP.
+# /dev/tcp is a bash builtin; /bin/sh is dash on debian-slim and lacks it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD sh -c 'exec 3<>/dev/tcp/127.0.0.1/${PORT:-8080}' || exit 1
+  CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/${PORT:-8080}' || exit 1
 
 ENTRYPOINT ["/usr/local/bin/argoport-entry"]
