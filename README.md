@@ -88,7 +88,38 @@ Semua **opsional**. Deploy tanpa konfigurasi pun sudah menghasilkan node yang ja
 | `ARGOPORT_LOG` | `warning` | Level log Xray. |
 | `ARGOPORT_BIND` | `0.0.0.0` | Bind address. Railway wajib `0.0.0.0`. |
 | `ARGOPORT_RUN_DIR` | `/data` | Direktori kerja untuk config dan state. Di container sudah di-set ke `/data` dan dimiliki user runtime. |
+| `TELEGRAM_BOT_TOKEN` | *kosong* | Token bot Telegram. Isi bersama `TELEGRAM_CHAT_ID` untuk kirim link ke chat. |
+| `TELEGRAM_CHAT_ID` | *kosong* | ID chat/channel tujuan. Lihat catatan di bawah. |
 | `PORT` | `8080` | Di-inject oleh Railway. **Jangan di-set sendiri.** |
+
+<details>
+<summary><b>📨 Kirim link otomatis ke Telegram</b></summary>
+
+<br>
+
+Kalau **kedua** variabel di atas diisi, begitu node siap semua link dikirim ke
+chat itu. Kalau salah satunya kosong, langkah ini dilewati dan node tetap jalan
+normal.
+
+```bash
+TELEGRAM_BOT_TOKEN = 123456:ABC-DEF...   # dari @BotFather
+TELEGRAM_CHAT_ID   = 6243379861
+```
+
+Cara dapetin `CHAT_ID`:
+
+1. Kirim pesan apa pun ke bot kamu.
+2. Buka `https://api.telegram.org/bot<TOKEN>/getUpdates`
+3. Cari `message.chat.id` di response-nya.
+
+Buat channel, pakai `@username_channel` sebagai `CHAT_ID` dan jadikan bot
+sebagai admin channel-nya.
+
+> [!NOTE]
+> Link node itu **rahasia**. Jangan kirim ke grup publik — siapa pun yang punya
+> link-nya bisa nyambung ke node kamu dan makan kuota tunnel-nya.
+
+</details>
 
 > [!WARNING]
 > Kalau kamu mount volume sendiri, pastikan direktori `ARGOPORT_RUN_DIR` **writable oleh user runtime** (uid 10001). Kalau tidak, script akan berhenti di awal dengan pesan yang jelas, bukan crash loop.
@@ -222,7 +253,7 @@ argoport/
 
 ## 📄 Lisensi
 
-**MIT.** © 2026 argoport. Ditulis dari nol — tidak ada kode yang diturunkan dari repo tunnel-deploy lain. Fork, modifikasi, dan pakai sesukamu. Pull request selalu diterima! 💛
+**MIT.** © 2026 argoport. Fork, modifikasi, dan pakai sesukamu. Pull request selalu diterima! 💛
 
 <div align="center">
 

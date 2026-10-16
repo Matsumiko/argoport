@@ -7,6 +7,8 @@ set -Eeuo pipefail
 # NODE_ID is resolved later by resolve_identity() — see the cascade there.
 WS_ROOT="${ARGOPORT_PATH:-argo}"       # no leading slash
 TAG="${ARGOPORT_TAG:-}"                # optional suffix on emitted node names
+TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"     # optional: DM the links on startup
+TG_CHAT="${TELEGRAM_CHAT_ID:-}"
 BIND="${ARGOPORT_BIND:-0.0.0.0}"
 LOG_LEVEL="${ARGOPORT_LOG:-warning}"
 RUN_DIR="${ARGOPORT_RUN_DIR:-/run}"
@@ -214,7 +216,8 @@ emit_links() {
       host:$argo,path:$path,tls:"tls",sni:$argo,alpn:""}')
   vmess_b64=$(printf '%s' "$vmess_json" | base64 -w0)
 
-  cat <<LINKS
+  # Written to a file as well as stdout: notify_telegram() reads it back.
+  cat > list <<LINKS
 
 ================ argoport · node links ================
 identity : ${NODE_ID}
@@ -249,6 +252,58 @@ ss://${ss_b64}@${camo}:443?plugin=${ss_plugin}&security=tls&sni=${ARGO}&type=ws&
 ======================================================
 
 LINKS
+  cat list
+}
+
+# ---- telegram (optional) ----
+# Fire-and-forget. The node is already up and the links are already printed by
+# the time this runs, so nothing here is allowed to kill the container.
+notify_telegram() {
+  if [[ -z "$TG_TOKEN" || -z "$TG_CHAT" ]]; then
+    say "telegram: not configured, skipping"
+    return 0
+  fi
+
+  # One message. The list file is ~3.3KB, under Telegram's 4096 cap, but the
+  # chunker below still splits it correctly if the tag or path ever pushes it over.
+  local msg
+  msg="⚡️ argoport node
+identity: ${NODE_ID}
+tunnel  : ${ARGO}
+
+$(cat list)"
+
+  local chunk="" line sent=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if (( ${#chunk} + ${#line} + 1 > 3900 )); then
+      if ! tg_send "$chunk"; then
+        warn "telegram: send failed (non-fatal)"
+        return 0
+      fi
+      sent=$((sent + 1))
+      chunk="${line}"$'\n'
+    else
+      chunk+="${line}"$'\n'
+    fi
+  done <<< "$msg"
+
+  if [[ -n "${chunk//[$'\n']/}" ]]; then
+    if ! tg_send "$chunk"; then
+      warn "telegram: send failed (non-fatal)"
+      return 0
+    fi
+    sent=$((sent + 1))
+  fi
+  say "telegram: sent ${sent} message(s) to chat ${TG_CHAT}"
+}
+
+# Send one chunk. stderr is discarded — curl echoes the request URL on
+# failure, and that URL carries the bot token.
+tg_send() {
+  curl -fsS --max-time 20 -X POST \
+    "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+    --data-urlencode "chat_id=${TG_CHAT}" \
+    --data-urlencode "text=$1" >/dev/null 2>&1
 }
 
 # ---- main ----
@@ -261,6 +316,7 @@ main() {
   start_xray
   start_tunnel
   emit_links
+  notify_telegram
 
   say "handing off — following xray (tunnel stays in background)"
   wait "$XRAY_PID"
