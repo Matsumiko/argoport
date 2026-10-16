@@ -1,0 +1,9 @@
+.git
+.gitignore
+*.md
+LICENSE
+list
+argo.log
+xray.json
+xray-error.log
+bin/
