@@ -63,15 +63,27 @@ resolve_identity() {
     return
   fi
 
+  # Each PaaS injects a different stable service identifier. Checking them all
+  # keeps the zero-config promise on every platform, not just Railway — without
+  # this the id falls to random and every redeploy invalidates saved links.
+  local platform_id=""
   if [[ -n "${RAILWAY_SERVICE_ID:-}" ]]; then
-    seed="$RAILWAY_SERVICE_ID"
+    platform_id="$RAILWAY_SERVICE_ID"
     say "identity: derived from RAILWAY_SERVICE_ID"
+  elif [[ -n "${RENDER_SERVICE_ID:-}" ]]; then
+    platform_id="$RENDER_SERVICE_ID"
+    say "identity: derived from RENDER_SERVICE_ID"
+  elif [[ -n "${FLY_APP_NAME:-}" ]]; then
+    # FLY_APP_NAME, not FLY_MACHINE_ID: every machine in an app shares the app
+    # name, so scaling out does not mint a new UUID per machine.
+    platform_id="$FLY_APP_NAME"
+    say "identity: derived from FLY_APP_NAME"
   else
-    seed=$(cat /proc/sys/kernel/random/uuid)
-    say "identity: fresh random (no Railway service id)"
+    platform_id=$(cat /proc/sys/kernel/random/uuid)
+    say "identity: fresh random (no platform service id)"
   fi
 
-  NODE_ID=$(derive_uuid "$seed")
+  NODE_ID=$(derive_uuid "$platform_id")
   save_identity "$state"
 }
 

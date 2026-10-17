@@ -134,7 +134,7 @@ Node butuh sebuah UUID, dan UUID itu harus bertahan setelah redeploy, kalau tida
 |:-:|:--|:--|
 | 1️⃣ | **`ARGOPORT_ID`** | Override eksplisit, menang mutlak. |
 | 2️⃣ | **Saved state** | Id yang sebelumnya sudah ditentukan dan disimpan di run directory. |
-| 3️⃣ | **`RAILWAY_SERVICE_ID`** | Railway mengeksposnya ke setiap deployment dan nilainya stabil antar redeploy (hanya deployment id yang berubah). UUID diturunkan secara deterministik via SHA-1, jadi service yang sama selalu menghasilkan UUID yang sama. **Ini jalur deploy Railway yang normal.** |
+| 3️⃣ | **ID layanan platform** | Railway, Render, dan Fly.io semuanya mengekspos id service yang stabil antar redeploy. UUID diturunkan secara deterministik via SHA-1 dari id itu, jadi service yang sama selalu menghasilkan UUID yang sama. **Ini jalur deploy normal di ketiga platform.** |
 | 4️⃣ | **Random** | Pilihan terakhir, dipakai saat jalan di luar Railway tanpa override. |
 
 > ✅ **Hasilnya:** dua orang yang clone repo ini mendapat UUID berbeda, sedangkan redeploy satu orang selalu mempertahankan UUID yang sama. Tidak ada yang perlu dikonfigurasi.
@@ -158,30 +158,48 @@ Paste hasilnya ke **Railway → Variables → `ARGOPORT_ID`**.
 
 ## 🖥 Jalankan di Tempat Lain
 
-<details open>
-<summary><b>🐳 Docker</b></summary>
+### Render
 
-<br>
+Bikin **Web Service**, connect repo ini. Build command `docker build -t argoport .`,
+start command `/usr/local/bin/argoport-entry` (atau biarkan kosong — Dockerfile
+sudah punya `ENTRYPOINT`).
+
+| | |
+|---|---|
+| Port | Render inject `PORT=10000` sendiri, dan script sudah membacanya. **Jangan set `PORT` manual.** |
+| Identitas | Stabil — diturunkan dari `RENDER_SERVICE_ID`. |
+| Bind | `0.0.0.0` (default, sudah benar). |
+
+> [!WARNING]
+> **Free tier tidur.** Render mematikan free web service setelah 15 menit tanpa
+> traffic masuk. Node ini outbound-only lewat tunnel, jadi traffic masuk nol —
+> dia akan tidur dan tunnel-nya mati. Pakai paid plan, atau jangan pakai Render
+> free buat node yang harus nyala terus.
+
+### Fly.io
+
+```bash
+fly launch --no-deploy     # deteksi Dockerfile, generate fly.toml
+fly deploy
+```
+
+Set `internal_port = 8080` di `fly.toml` (port default script). Identitas
+stabil — diturunkan dari `FLY_APP_NAME`.
+
+### Docker di host mana pun
 
 ```bash
 docker build -t argoport .
 docker run --rm -p 8080:8080 argoport
 ```
 
-</details>
-
-<details>
-<summary><b>🧱 Langsung di host</b></summary>
-
-<br>
+### Langsung di host
 
 Pastikan `xray` dan `cloudflared` ada di `PATH`, dan `ARGOPORT_RUN_DIR` menunjuk ke direktori writable:
 
 ```bash
 PORT=8080 ARGOPORT_RUN_DIR=$(mktemp -d) ./entrypoint.sh
 ```
-
-</details>
 
 ## 🌐 Alur Traffic
 
