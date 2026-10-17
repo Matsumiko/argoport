@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # ---- runtime knobs (env-overridable) ----
 # NODE_ID is resolved later by resolve_identity() — see the cascade there.
 WS_ROOT="${ARGOPORT_PATH:-argo}"       # no leading slash
-TAG="${ARGOPORT_TAG:-}"                # optional suffix on emitted node names
+TAG="${ARGOPORT_TAG:-matsumiko}"     # node name + path suffix; override to relabel
 TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"     # optional: DM the links on startup
 TG_CHAT="${TELEGRAM_CHAT_ID:-}"
 # Appended after the protocol name in every WebSocket path, e.g. /argo-vless-matsumiko.
