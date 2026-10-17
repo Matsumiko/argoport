@@ -84,7 +84,7 @@ Semua **opsional**. Deploy tanpa konfigurasi pun sudah menghasilkan node yang ja
 |:--|:--|:--|
 | `ARGOPORT_ID` | *derived* | Identitas node. Isi hanya jika ingin menimpa nilai turunan. |
 | `ARGOPORT_PATH` | `argo` | Root WebSocket path, tanpa slash di depan. |
-| `ARGOPORT_TAG` | *kosong* | Menempel `[tag]` di nama node dan `-tag` di path, jadi `argoport-vless[matsumiko]` dengan path `/argo-vless-matsumiko`. Berguna kalau beberapa deployment masuk ke satu client. |
+| `ARGOPORT_TAG` | *kosong* | Menempel `-tag` di nama node **dan** path, jadi `argoport-vless-matsumiko` dengan path `/argo-vless-matsumiko`. Tanpa ini beberapa deployment akan tabrakan nama dan path di satu client. |
 | `ARGOPORT_LOG` | `warning` | Level log Xray. |
 | `ARGOPORT_BIND` | `0.0.0.0` | Bind address. Railway wajib `0.0.0.0`. |
 | `ARGOPORT_RUN_DIR` | `/data` | Direktori kerja untuk config dan state. Di container sudah di-set ke `/data` dan dimiliki user runtime. |

@@ -198,16 +198,10 @@ start_tunnel() {
 emit_links() {
   local camo="www.digitalocean.com"
   local ss_cred ss_b64 ss_plugin vmess_json vmess_b64
-  # Node display names. ARGOPORT_TAG appends [tag] so several deployments
-  # can share one client without their entries being indistinguishable.
-  local vless_name="argoport-vless" vmess_name="argoport-vmess"
-  local trojan_name="argoport-trojan" ss_name="argoport-ss"
-  if [[ -n "$TAG" ]]; then
-    vless_name="${vless_name}[${TAG}]"
-    vmess_name="${vmess_name}[${TAG}]"
-    trojan_name="${trojan_name}[${TAG}]"
-    ss_name="${ss_name}[${TAG}]"
-  fi
+  # Node display names. Same WS_TAG as the paths, so a name and the path it
+  # dials can never disagree.
+  local vless_name="argoport-vless${WS_TAG}" vmess_name="argoport-vmess${WS_TAG}"
+  local trojan_name="argoport-trojan${WS_TAG}" ss_name="argoport-ss${WS_TAG}"
 
   ss_cred="chacha20-ietf-poly1305:${NODE_ID}"
   ss_b64=$(printf '%s' "$ss_cred" | base64 -w0)
