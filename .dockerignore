@@ -2,6 +2,7 @@
 .gitignore
 *.md
 LICENSE
+assets/
 list
 argo.log
 xray.json
