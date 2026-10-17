@@ -1,0 +1,37 @@
+# Fly.io config for argoport.
+#
+# `fly launch` regenerates `app` and `primary_region` — both must be yours.
+# Railway ignores this file entirely; it reads railway.json. The only file the
+# two platforms share is the Dockerfile, and both consume it identically.
+
+app = "argoport"          # must be globally unique on Fly — change if taken
+primary_region = "sin"    # run `flyctl config save` after `fly launch` to pin yours
+
+[build]
+  # No builder block needed — Fly detects the Dockerfile at the repo root.
+
+[env]
+  # PORT is deliberately absent. Fly does not inject it, and the entrypoint
+  # falls back to 8080, which is what internal_port below expects. Setting it
+  # here would mean two places to keep in sync.
+  ARGOPORT_RUN_DIR = "/data"
+
+[http_service]
+  # Must match the entrypoint's default port. Fly does not inject PORT, so the
+  # script defaults to 8080 and this has to agree.
+  internal_port = 8080
+  force_https = true
+
+  # The node is outbound-only through the Argo tunnel, so Fly sees no inbound
+  # traffic. Without these two settings Fly reads that as idle and stops the
+  # machine — the same trap Render's free tier sets.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "45s"
+    method = "GET"
+    path = "/health"

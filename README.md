@@ -46,6 +46,7 @@ Cloudflare Argo tunnel itu **outbound-only**. Platform tidak perlu membuka port 
 | 🙈 **IP origin tersembunyi** | Tidak ada IP asli di DNS record |
 | 🆔 **Identitas stabil** | UUID otomatis diturunkan, tidak mati tiap redeploy |
 | 🧩 **Zero config** | Deploy tanpa konfigurasi, langsung jalan |
+| 🩺 **Endpoint `/health`** | Balas `200 {"status":"ok"}` di port publik. Buat healthcheck Railway/Render/Fly, sekaligus kamuflase |
 | 🐳 **Dockerfile multi-stage** | Binary di-bake saat build, container start dalam hitungan detik |
 
 ---
@@ -178,13 +179,25 @@ sudah punya `ENTRYPOINT`).
 
 ### Fly.io
 
+`fly.toml` sudah ada di repo, jadi tidak perlu nebak-nebak saat `fly launch`:
+
 ```bash
-fly launch --no-deploy     # deteksi Dockerfile, generate fly.toml
+fly launch --no-deploy     # deteksi Dockerfile, baca fly.toml
 fly deploy
 ```
 
-Set `internal_port = 8080` di `fly.toml` (port default script). Identitas
-stabil — diturunkan dari `FLY_APP_NAME`.
+Dua hal di `fly.toml` yang perlu dicek:
+
+- `app` — harus unik secara global di Fly. Ganti kalau sudah dipakai.
+- `primary_region` — jalankan `fly config save` setelah `fly launch` untuk
+  mengunci region pilihanmu.
+
+> [!WARNING]
+> `auto_stop_machines = false` itu penting. Node ini outbound-only lewat tunnel,
+> jadi Fly tidak melihat traffic masuk apa pun dan akan menganggapnya idle lalu
+> mematikan mesinnya — jebakan yang sama dengan Render free tier.
+
+Identitas stabil — diturunkan dari `FLY_APP_NAME`.
 
 ### Docker di host mana pun
 
@@ -240,6 +253,30 @@ Host kamuflase pada link yang dihasilkan adalah `www.digitalocean.com`. Client t
 
 ---
 
+## 🩺 Endpoint /health
+
+Selain inbound protocol, ada responder HTTP kecil yang jalan di loopback lewat
+`socat`. Catch-all fallback di Xray meneruskan semua request yang gak match path
+protocol ke sana, jadi `/health` bisa diakses dari **port publik yang sama**:
+
+```bash
+curl https://<domain-kamu>/health
+# 200 {"status":"ok","service":"argoport"}
+```
+
+Fungsinya dua:
+
+1. **Healthcheck** — `railway.json` sudah set `healthcheckPath: /health`, dan
+   `fly.toml` sudah punya check serupa. Railway menunggu endpoint ini sebelum
+   ngedeklarasikan deploy sukses.
+2. **Kamuflase** — request HTTP biasa yang nyasar ke node dibalas `200`,
+   bukan connection drop. Keliatan kayak web server kecil.
+
+> [!NOTE]
+> Responder-nya `socat` dengan `fork`, bukan loop `nc`. `nc -l` exit tiap satu
+> koneksi dan menyisakan window port tertutup — healthcheck yang kena window itu
+> bakal false negative. `socat` fork per koneksi sehingga port tetap terbuka.
+
 ## ⚠️ Batasan yang Perlu Diketahui
 
 > [!WARNING]
@@ -260,7 +297,8 @@ Host kamuflase pada link yang dihasilkan adalah `www.digitalocean.com`. Client t
 argoport/
 ├── Dockerfile          # multi-stage build, binary di-bake saat build
 ├── entrypoint.sh       # render config, supervisi proses, emisi link
-├── railway.json        # config service: Dockerfile builder, single instance
+├── railway.json        # config service Railway: Dockerfile builder, /health
+├── fly.toml            # config Fly.io: internal_port 8080, auto-stop off
 ├── README.md
 ├── LICENSE             # MIT
 ├── .gitignore
