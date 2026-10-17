@@ -110,10 +110,6 @@ rm -f .write-probe
 # One public inbound on $HOST_PORT. Path-based fallbacks fan out to
 # per-protocol loopback inbounds so all four protocols share one listener.
 render_config() {
-  # SINK_FALLBACK is not an Xray inbound — it is the socat health responder,
-  # started by start_health(). The catch-all fallback forwards unmatched
-  # traffic there, so /health answers on the public port and any other path
-  # gets a 200 instead of a dropped connection.
   cat > xray.json <<JSON
 {
   "log": { "access": "none", "error": "/dev/stderr", "loglevel": "${LOG_LEVEL}" },
@@ -135,6 +131,11 @@ render_config() {
       },
       "streamSettings": { "network": "tcp" },
       "sniffing": { "enabled": true, "destOverride": [ "http", "tls", "quic" ], "metadataOnly": false }
+    },
+    {
+      "listen": "127.0.0.1", "port": ${SINK_FALLBACK}, "protocol": "vless",
+      "settings": { "clients": [ { "id": "${NODE_ID}" } ], "decryption": "none" },
+      "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/" } }
     },
     {
       "listen": "127.0.0.1", "port": ${SINK_VLESS}, "protocol": "vless",
@@ -175,34 +176,8 @@ cleanup() {
   say "shutting down"
   [[ -n "$XRAY_PID" ]] && kill "$XRAY_PID" 2>/dev/null || true
   [[ -n "$CF_PID" ]] && kill "$CF_PID" 2>/dev/null || true
-  [[ -n "$HEALTH_PID" ]] && kill "$HEALTH_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
-
-start_health() {
-  # The responder is a separate script because socat forks it per connection,
-  # which is what keeps the port bound continuously (no re-arm gap) and lets
-  # concurrent probes through. Computed Content-Length, not hardcoded.
-  cat > healthresp.sh <<'HEALTH'
-#!/usr/bin/env bash
-BODY='{"status":"ok","service":"argoport"}'
-printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s' "${#BODY}" "$BODY"
-HEALTH
-  chmod +x healthresp.sh
-
-  socat TCP-LISTEN:"${SINK_FALLBACK}",bind=127.0.0.1,reuseaddr,fork EXEC:"${PWD}/healthresp.sh" >/dev/null 2>&1 &
-  HEALTH_PID=$!
-
-  for _ in $(seq 1 20); do
-    if curl -fsS --max-time 2 "http://127.0.0.1:${SINK_FALLBACK}/health" >/dev/null 2>&1; then
-      say "health responder on :${SINK_FALLBACK}"
-      return
-    fi
-    kill -0 "$HEALTH_PID" 2>/dev/null || die "health responder exited at startup (is socat installed?)"
-    sleep 0.25
-  done
-  warn "health responder did not answer — continuing, but /health will 404"
-}
 
 start_xray() {
   render_config
@@ -233,7 +208,7 @@ start_tunnel() {
 
 # ---- client links ----
 emit_links() {
-  local camo="www.digitalocean.com"
+  local camo="hubspotonwebflow.com"
   local ss_cred ss_b64 ss_plugin vmess_json vmess_b64
   # Node display names. Same WS_TAG as the paths, so a name and the path it
   # dials can never disagree.
@@ -347,9 +322,7 @@ main() {
   say "listen   ${BIND}:${HOST_PORT}"
   command -v xray >/dev/null || die "xray not on PATH"
   command -v cloudflared >/dev/null || die "cloudflared not on PATH"
-  command -v socat >/dev/null || die "socat not on PATH"
 
-  start_health
   start_xray
   start_tunnel
   emit_links

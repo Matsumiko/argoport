@@ -25,7 +25,7 @@ RUN curl -fsSL --retry 3 -o xray.zip \
 # ---- runtime stage: minimal, non-root ----
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl jq socat \
+ && apt-get install -y --no-install-recommends ca-certificates curl jq \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --no-create-home argoport
 
